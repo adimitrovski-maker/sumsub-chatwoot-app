@@ -3,9 +3,34 @@
 <head>
   <meta charset="UTF-8" />
   <title>Sumsub Chatwoot App</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 12px;
+      font-size: 14px;
+    }
+    pre {
+      background: #f4f4f4;
+      padding: 8px;
+      max-height: 200px;
+      overflow: auto;
+    }
+  </style>
 </head>
 <body>
-  <h1>Sumsub Chatwoot App</h1>
-  <p>If you can see this later inside Chatwoot, the app is loading.</p>
+  <h2>Sumsub Chatwoot App</h2>
+  <p>If you see this, the app is loading inside Chatwoot.</p>
+
+  <h3>Raw Chatwoot Context</h3>
+  <pre id="context">Waiting for context…</pre>
+
+  <script>
+    window.addEventListener("message", (event) => {
+      if (event.data && event.data.event === "appContext") {
+        document.getElementById("context").textContent =
+          JSON.stringify(event.data, null, 2);
+      }
+    });
+  </script>
 </body>
 </html>
