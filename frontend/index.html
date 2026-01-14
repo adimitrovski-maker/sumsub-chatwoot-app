@@ -5,51 +5,160 @@
     <title>Sumsub Chatwoot App</title>
     <style>
       body { font-family: system-ui, sans-serif; padding: 12px; }
-      pre { white-space: pre-wrap; word-break: break-word; background: #f5f5f5; padding: 12px; border-radius: 8px; }
-      button { padding: 8px 12px; border-radius: 8px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
-      .row { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+      .card { background: #f5f5f5; padding: 12px; border-radius: 10px; margin-bottom: 12px; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
       .pill { font-size: 12px; background: #eee; padding: 4px 8px; border-radius: 999px; }
+      .error { background: #ffe8e8; border: 1px solid #ffb3b3; padding: 10px; border-radius: 10px; }
+      .ok { background: #e9ffe8; border: 1px solid #b6ffb3; padding: 10px; border-radius: 10px; }
+      pre { white-space: pre-wrap; word-break: break-word; background: #fff; padding: 10px; border-radius: 10px; border: 1px solid #ddd; }
+      button { padding: 8px 12px; border-radius: 8px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
     </style>
   </head>
   <body>
     <h3>Sumsub Chatwoot App</h3>
 
-    <div class="row">
+    <div class="row" style="margin-bottom: 10px;">
       <button id="request">Request context</button>
-      <span class="pill" id="origin">origin: (waiting)</span>
       <span class="pill" id="count">messages: 0</span>
     </div>
 
-    <pre id="out">Waiting for window.postMessage context…</pre>
+    <div class="card">
+      <div class="row">
+        <span class="pill" id="inboxPill">inbox: (waiting)</span>
+        <span class="pill" id="brandPill">brand: (waiting)</span>
+        <span class="pill" id="attrPill">attr: (waiting)</span>
+      </div>
+      <div style="margin-top: 10px;" id="resultBox">
+        Waiting for context…
+      </div>
+    </div>
+
+    <details>
+      <summary>Raw context (debug)</summary>
+      <pre id="raw">Waiting…</pre>
+    </details>
 
     <script>
       let msgCount = 0;
-      const out = document.getElementById('out');
-      const originEl = document.getElementById('origin');
-      const countEl = document.getElementById('count');
 
-      window.addEventListener('message', (event) => {
+      const inboxPill = document.getElementById("inboxPill");
+      const brandPill = document.getElementById("brandPill");
+      const attrPill = document.getElementById("attrPill");
+      const resultBox = document.getElementById("resultBox");
+      const raw = document.getElementById("raw");
+      const countEl = document.getElementById("count");
+
+      // Inbox → brand configuration
+      const BRAND_MAP = [
+        {
+          brand: "Pikapotti",
+          prefix: "PPTI-",
+          inboxIds: [86179, 86339],
+          backofficeAttrKey: "pptibackofficeid"
+        },
+        {
+          brand: "Pelaa Nyt",
+          prefix: "PN-",
+          inboxIds: [64829, 82727, 67762, 66089],
+          backofficeAttrKey: "backofficeid"
+        },
+        {
+          brand: "Spinni",
+          prefix: "SP-",
+          inboxIds: [65464, 60941, 81712],
+          backofficeAttrKey: "spbackofficeid"
+        }
+      ];
+
+      function requestContext() {
+        window.parent.postMessage("chatwoot-dashboard-app:fetch-info", "*");
+      }
+
+      function findBrandByInbox(inboxId) {
+        return BRAND_MAP.find(b => b.inboxIds.includes(inboxId)) || null;
+      }
+
+      function isNumeric(value) {
+        if (value === null || value === undefined) return false;
+        const s = String(value).trim();
+        if (!s) return false;
+        return /^[0-9]+$/.test(s);
+      }
+
+      function renderStatus({ inboxId, brandInfo, backofficeValue }) {
+        inboxPill.textContent = `inbox: ${inboxId ?? "(missing)"}`;
+
+        if (!brandInfo) {
+          brandPill.textContent = "brand: UNKNOWN";
+          attrPill.textContent = "attr: (n/a)";
+          resultBox.innerHTML = `
+            <div class="error">
+              <strong>Unknown inbox:</strong> ${inboxId}.<br/>
+              Please add this inbox ID to the brand mapping in the app.
+            </div>
+          `;
+          return;
+        }
+
+        brandPill.textContent = `brand: ${brandInfo.brand}`;
+        attrPill.textContent = `attr: ${brandInfo.backofficeAttrKey}`;
+
+        if (!isNumeric(backofficeValue)) {
+          resultBox.innerHTML = `
+            <div class="error">
+              <strong>Missing ${brandInfo.backofficeAttrKey} value.</strong><br/>
+              This value must be present (numeric) to proceed with Sumsub for <strong>${brandInfo.brand}</strong>.
+            </div>
+          `;
+          return;
+        }
+
+        const externalUserId = `${brandInfo.prefix}${String(backofficeValue).trim()}`;
+        resultBox.innerHTML = `
+          <div class="ok">
+            <div><strong>External ID:</strong> ${externalUserId}</div>
+            <div style="font-size: 12px; opacity: 0.8; margin-top: 6px;">
+              Next step: use this External ID when creating/finding applicants in Sumsub.
+            </div>
+          </div>
+        `;
+      }
+
+      window.addEventListener("message", (event) => {
         msgCount += 1;
-        originEl.textContent = `origin: ${event.origin || '(none)'}`;
         countEl.textContent = `messages: ${msgCount}`;
 
+        // Show raw for debugging
         const payload = {
           receivedAt: new Date().toISOString(),
           origin: event.origin,
           data: event.data
         };
-        out.textContent = JSON.stringify(payload, null, 2);
+        raw.textContent = JSON.stringify(payload, null, 2);
+
+        // Try to extract conversation + contact from the payload you showed earlier:
+        // event.data is often a stringified JSON (per your example)
+        let parsed = null;
+        try {
+          parsed = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+        } catch (e) {
+          // if it isn't JSON, we can't parse it, so stop here
+          return;
+        }
+
+        const convo = parsed?.data?.conversation || parsed?.conversation || null;
+        const contact = parsed?.data?.contact || parsed?.contact || convo?.meta?.sender || null;
+
+        const inboxId = convo?.inbox_id ?? parsed?.data?.conversation?.inbox_id ?? null;
+        const brandInfo = findBrandByInbox(inboxId);
+
+        const customAttrs = contact?.custom_attributes || {};
+        const backofficeValue = brandInfo ? customAttrs?.[brandInfo.backofficeAttrKey] : null;
+
+        renderStatus({ inboxId, brandInfo, backofficeValue });
       });
 
-      function requestContext() {
-        try {
-          window.parent.postMessage('chatwoot-dashboard-app:fetch-info', '*');
-        } catch (e) {
-          out.textContent = `Failed to postMessage fetch request: ${e?.message || e}`;
-        }
-      }
-
-      document.getElementById('request').addEventListener('click', requestContext);
+      document.getElementById("request").addEventListener("click", requestContext);
 
       // Auto-request once on load
       requestContext();
