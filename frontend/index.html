@@ -27,6 +27,7 @@
         <span class="pill" id="inboxPill">inbox: (waiting)</span>
         <span class="pill" id="brandPill">brand: (waiting)</span>
         <span class="pill" id="attrPill">attr: (waiting)</span>
+        <span class="pill" id="backendPill">backend: (not checked)</span>
       </div>
       <div style="margin-top: 10px;" id="resultBox">
         Waiting for context…
@@ -47,6 +48,7 @@
       const resultBox = document.getElementById("resultBox");
       const raw = document.getElementById("raw");
       const countEl = document.getElementById("count");
+      const backendPill = document.getElementById("backendPill");
 
       // Inbox → brand configuration
       const BRAND_MAP = [
@@ -70,6 +72,8 @@
         }
       ];
 
+      const BACKEND_BASE_URL = "PASTE_YOUR_BACKEND_RENDER_URL_HERE";
+
       function requestContext() {
         window.parent.postMessage("chatwoot-dashboard-app:fetch-info", "*");
       }
@@ -83,6 +87,21 @@
         const s = String(value).trim();
         if (!s) return false;
         return /^[0-9]+$/.test(s);
+      }
+
+      async function checkBackend() {
+        try {
+          backendPill.textContent = "backend: checking…";
+          const res = await fetch(`${BACKEND_BASE_URL}/api/ping`);
+          const data = await res.json();
+          if (data && data.ok) {
+            backendPill.textContent = "backend: connected ✅";
+          } else {
+            backendPill.textContent = "backend: unexpected response";
+          }
+        } catch (e) {
+          backendPill.textContent = "backend: not reachable ❌";
+        }
       }
 
       function renderStatus({ inboxId, brandInfo, backofficeValue }) {
@@ -162,6 +181,7 @@
 
       // Auto-request once on load
       requestContext();
+      checkBackend();
     </script>
   </body>
 </html>
