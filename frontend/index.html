@@ -25,12 +25,19 @@
   <pre id="context">Waiting for context…</pre>
 
   <script>
-    window.addEventListener("message", (event) => {
-      if (event.data && event.data.event === "appContext") {
-        document.getElementById("context").textContent =
-          JSON.stringify(event.data, null, 2);
-      }
-    });
-  </script>
+  // Ask Chatwoot for context when app loads
+  window.parent.postMessage(
+    { event: "appContextRequest" },
+    "*"
+  );
+
+  // Listen for the response
+  window.addEventListener("message", (event) => {
+    if (event.data && event.data.event === "appContext") {
+      document.getElementById("context").textContent =
+        JSON.stringify(event.data, null, 2);
+    }
+  });
+</script>
 </body>
 </html>
