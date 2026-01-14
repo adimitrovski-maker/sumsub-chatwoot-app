@@ -1,10 +1,58 @@
-<script>
-  const contextEl = document.getElementById("context");
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Sumsub Chatwoot App</title>
+    <style>
+      body { font-family: system-ui, sans-serif; padding: 12px; }
+      pre { white-space: pre-wrap; word-break: break-word; background: #f5f5f5; padding: 12px; border-radius: 8px; }
+      button { padding: 8px 12px; border-radius: 8px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
+      .row { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+      .pill { font-size: 12px; background: #eee; padding: 4px 8px; border-radius: 999px; }
+    </style>
+  </head>
+  <body>
+    <h3>Sumsub Chatwoot App</h3>
 
-  contextEl.textContent = "Listening for messages...";
+    <div class="row">
+      <button id="request">Request context</button>
+      <span class="pill" id="origin">origin: (waiting)</span>
+      <span class="pill" id="count">messages: 0</span>
+    </div>
 
-  window.addEventListener("message", (event) => {
-    contextEl.textContent =
-      "Received message:\n\n" + JSON.stringify(event.data, null, 2);
-  });
-</script>
+    <pre id="out">Waiting for window.postMessage context…</pre>
+
+    <script>
+      let msgCount = 0;
+      const out = document.getElementById('out');
+      const originEl = document.getElementById('origin');
+      const countEl = document.getElementById('count');
+
+      window.addEventListener('message', (event) => {
+        msgCount += 1;
+        originEl.textContent = `origin: ${event.origin || '(none)'}`;
+        countEl.textContent = `messages: ${msgCount}`;
+
+        const payload = {
+          receivedAt: new Date().toISOString(),
+          origin: event.origin,
+          data: event.data
+        };
+        out.textContent = JSON.stringify(payload, null, 2);
+      });
+
+      function requestContext() {
+        try {
+          window.parent.postMessage('chatwoot-dashboard-app:fetch-info', '*');
+        } catch (e) {
+          out.textContent = `Failed to postMessage fetch request: ${e?.message || e}`;
+        }
+      }
+
+      document.getElementById('request').addEventListener('click', requestContext);
+
+      // Auto-request once on load
+      requestContext();
+    </script>
+  </body>
+</html>
