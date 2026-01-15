@@ -81,10 +81,14 @@ app.get("/api/sumsub/levels", async (req, res) => {
     });
 
     // Return both the raw response and a simplified list of level names
-    const items = Array.isArray(data?.items) ? data.items : [];
-    const levelNames = items
-      .map((x) => x?.name || x?.id || x?.levelName)
-      .filter(Boolean);
+    const items =
+  (Array.isArray(data?.items) && data.items) ||
+  (Array.isArray(data?.list?.items) && data.list.items) ||
+  [];
+
+const levelNames = items
+  .map((x) => x?.name || x?.id || x?.levelName)
+  .filter(Boolean);
 
     res.json({ ok: true, levelNames, raw: data });
   } catch (e) {
