@@ -1,4 +1,5 @@
 const express = require("express");
+const crypto = require("crypto");
 const { Pool } = require("pg");
 
 const app = express();
@@ -15,6 +16,81 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json());
+
+// ---- Sumsub helper (signed requests) ----
+const SUMSUB_BASE_URL = process.env.SUMSUB_BASE_URL || "https://api.sumsub.com";
+const SUMSUB_APP_TOKEN = process.env.SUMSUB_APP_TOKEN;
+const SUMSUB_SECRET_KEY = process.env.SUMSUB_SECRET_KEY;
+
+function signSumsubRequest({ method, pathWithQuery, bodyString = "" }) {
+  const ts = Math.floor(Date.now() / 1000).toString();
+  const stringToSign = ts + method.toUpperCase() + pathWithQuery + bodyString;
+
+  const signature = crypto
+    .createHmac("sha256", SUMSUB_SECRET_KEY)
+    .update(stringToSign)
+    .digest("hex");
+
+  return { ts, signature };
+}
+
+async function sumsubFetch({ method, pathWithQuery, bodyObj = null }) {
+  if (!SUMSUB_APP_TOKEN || !SUMSUB_SECRET_KEY) {
+    throw new Error("Missing SUMSUB_APP_TOKEN or SUMSUB_SECRET_KEY in environment variables.");
+  }
+
+  const bodyString = bodyObj ? JSON.stringify(bodyObj) : "";
+  const { ts, signature } = signSumsubRequest({ method, pathWithQuery, bodyString });
+
+  const url = `${SUMSUB_BASE_URL}${pathWithQuery}`;
+
+  const res = await fetch(url, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      "X-App-Token": SUMSUB_APP_TOKEN,
+      "X-App-Access-Ts": ts,
+      "X-App-Access-Sig": signature,
+    },
+    body: bodyObj ? bodyString : undefined,
+  });
+
+  const text = await res.text();
+  let json = null;
+  try {
+    json = JSON.parse(text);
+  } catch (e) {
+    // not JSON
+  }
+
+  if (!res.ok) {
+    const msg = json ? JSON.stringify(json) : text;
+    throw new Error(`Sumsub error ${res.status}: ${msg}`);
+  }
+
+  return json ?? text;
+}
+
+// NEW: Fetch verification levels (dynamic dropdown)
+app.get("/api/sumsub/levels", async (req, res) => {
+  try {
+    // This endpoint returns a structured list of levels
+    const data = await sumsubFetch({
+      method: "GET",
+      pathWithQuery: "/resources/applicants/-/levels",
+    });
+
+    // Return both the raw response and a simplified list of level names
+    const items = Array.isArray(data?.items) ? data.items : [];
+    const levelNames = items
+      .map((x) => x?.name || x?.id || x?.levelName)
+      .filter(Boolean);
+
+    res.json({ ok: true, levelNames, raw: data });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
 
 // ---- DB setup ----
 const pool = new Pool({
