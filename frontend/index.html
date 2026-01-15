@@ -468,10 +468,25 @@
     if (s.clientComment) lines.push(`<div><strong>Client comment:</strong> ${s.clientComment}</div>`);
 
     // Decide pill status
-    const pill = (s.reviewAnswer === "GREEN") ? "status: approved ✅"
-               : (s.reviewAnswer === "RED") ? "status: rejected ❌"
-               : "status: pending ⏳";
-    statusPill.textContent = pill;
+    // Prefer final answers when present
+let pill = "status: pending ⏳";
+
+// Map Sumsub API reviewStatus to a friendlier dashboard label
+const rs = (s.reviewStatus || "").toLowerCase();
+
+if (s.reviewAnswer === "GREEN") {
+  pill = "status: approved ✅";
+} else if (s.reviewAnswer === "RED") {
+  pill = "status: rejected ❌";
+} else if (rs === "init") {
+  pill = "status: documents requested 📄";
+} else if (rs === "pending") {
+  pill = "status: pending ⏳";
+} else if (rs) {
+  pill = `status: ${rs} ⏳`;
+}
+
+statusPill.textContent = pill;
 
     statusBox.innerHTML = `
       <div class="card" style="background:#fff; border:1px solid #ddd;">
