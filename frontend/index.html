@@ -29,13 +29,31 @@
         <span class="pill" id="attrPill">attr: (waiting)</span>
         <span class="pill" id="backendPill">backend: (not checked)</span>
       </div>
-      <div style="margin-top: 10px;" class="card">
-  <div style="font-weight: 600; margin-bottom: 6px;">Verification level</div>
-  <select id="levelSelect" style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid #ccc;">
-    <option value="">Loading levels…</option>
-  </select>
-  <div id="levelHint" style="font-size: 12px; opacity: 0.8; margin-top: 6px;"></div>
-</div>
+      
+    <div style="margin-top: 10px;" class="card">
+     <div style="font-weight: 600; margin-bottom: 6px;">Verification level</div>
+     <select id="levelSelect" style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid #ccc;">
+     <option value="">Loading levels…</option>
+     </select>
+     <div id="levelHint" style="font-size: 12px; opacity: 0.8; margin-top: 6px;"></div>
+    </div>
+
+    <div style="margin-top: 10px;" class="card">
+     <div style="font-weight: 600; margin-bottom: 6px;">Applicant details</div>
+
+     <div style="display: grid; gap: 8px;">
+      <input id="firstName" placeholder="First name *" style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid #ccc;" />
+      <input id="middleName" placeholder="Middle name (optional)" style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid #ccc;" />
+      <input id="lastName" placeholder="Last name *" style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid #ccc;" />
+     </div>
+
+     <div class="row" style="margin-top: 10px;">
+      <button id="createApplicantBtn">Create applicant</button>
+      <span class="pill" id="createStatus">create: (idle)</span>
+     </div>
+
+     <div id="createOutput" style="margin-top: 8px; font-size: 12px;"></div>
+    </div>
 
 <div style="margin-top: 10px;" id="resultBox">
   Waiting for context…
@@ -49,6 +67,10 @@
 
     <script>
       let msgCount = 0;
+      let currentInboxId = null;
+      let currentBrand = null;
+      let currentExternalUserId = null;
+      let contactFullName = "";
 
       const inboxPill = document.getElementById("inboxPill");
       const brandPill = document.getElementById("brandPill");
@@ -83,6 +105,12 @@
       const BACKEND_BASE_URL = "https://sumsub-chatwoot-app.onrender.com";
       const levelSelect = document.getElementById("levelSelect");
       const levelHint = document.getElementById("levelHint");
+      const firstNameEl = document.getElementById("firstName");
+      const middleNameEl = document.getElementById("middleName");
+      const lastNameEl = document.getElementById("lastName");
+      const createApplicantBtn = document.getElementById("createApplicantBtn");
+      const createStatus = document.getElementById("createStatus");
+      const createOutput = document.getElementById("createOutput");
 
       function requestContext() {
         window.parent.postMessage("chatwoot-dashboard-app:fetch-info", "*");
@@ -98,6 +126,30 @@
         if (!s) return false;
         return /^[0-9]+$/.test(s);
       }
+
+      function prefillNamesFromFullName(fullName) {
+  const name = String(fullName || "").trim();
+  if (!name) return;
+
+  // If the agent has already typed something, don't overwrite it
+  if (firstNameEl.value || lastNameEl.value || middleNameEl.value) return;
+
+  const parts = name.split(/\s+/).filter(Boolean);
+  if (parts.length === 1) {
+    firstNameEl.value = parts[0];
+    lastNameEl.value = "";
+    return;
+  }
+  if (parts.length === 2) {
+    firstNameEl.value = parts[0];
+    lastNameEl.value = parts[1];
+    return;
+  }
+
+  firstNameEl.value = parts[0];
+  lastNameEl.value = parts[parts.length - 1];
+  middleNameEl.value = parts.slice(1, -1).join(" ");
+}
 
       async function checkBackend() {
         try {
@@ -173,10 +225,16 @@
               This value must be present (numeric) to proceed with Sumsub for <strong>${brandInfo.brand}</strong>.
             </div>
           `;
+           currentInboxId = inboxId;
+           currentBrand = brandInfo.brand;
+           currentExternalUserId = null;
           return;
         }
 
         const externalUserId = `${brandInfo.prefix}${String(backofficeValue).trim()}`;
+        currentInboxId = inboxId;
+        currentBrand = brandInfo.brand;
+        currentExternalUserId = externalUserId;
         resultBox.innerHTML = `
           <div class="ok">
             <div><strong>External ID:</strong> ${externalUserId}</div>
@@ -216,6 +274,8 @@
         const brandInfo = findBrandByInbox(inboxId);
 
         const customAttrs = contact?.custom_attributes || {};
+         contactFullName = contact?.name || "";
+         prefillNamesFromFullName(contactFullName);
         const backofficeValue = brandInfo ? customAttrs?.[brandInfo.backofficeAttrKey] : null;
 
         renderStatus({ inboxId, brandInfo, backofficeValue });
@@ -224,6 +284,66 @@
       document.getElementById("request").addEventListener("click", requestContext);
 
       // Auto-request once on load
+      async function createApplicant() {
+  try {
+    createOutput.textContent = "";
+    createStatus.textContent = "create: working…";
+
+    const levelName = levelSelect.value;
+    const firstName = String(firstNameEl.value || "").trim();
+    const middleName = String(middleNameEl.value || "").trim();
+    const lastName = String(lastNameEl.value || "").trim();
+
+    if (!currentExternalUserId || !currentBrand || !currentInboxId) {
+      createStatus.textContent = "create: missing external ID ❌";
+      createOutput.textContent = "External ID is missing for this brand/inbox. Update the correct backoffice id attribute in Chatwoot.";
+      return;
+    }
+    if (!levelName) {
+      createStatus.textContent = "create: select level ❌";
+      createOutput.textContent = "Please select a verification level first.";
+      return;
+    }
+    if (!firstName || !lastName) {
+      createStatus.textContent = "create: missing names ❌";
+      createOutput.textContent = "First name and last name are required.";
+      return;
+    }
+
+    const payload = {
+      externalUserId: currentExternalUserId,
+      brand: currentBrand,
+      inboxId: currentInboxId,
+      levelName,
+      firstName,
+      lastName,
+      middleName
+    };
+
+    const res = await fetch(`${BACKEND_BASE_URL}/api/kyc/create-applicant`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await res.json();
+
+    if (!data.ok) {
+      createStatus.textContent = "create: failed ❌";
+      createOutput.textContent = data.error || "Unknown error";
+      return;
+    }
+
+    createStatus.textContent = data.reused ? "create: reused ✅" : "create: created ✅";
+    createOutput.innerHTML = `<div><strong>Applicant ID:</strong> ${data.applicantId}</div>
+                              <div><strong>External ID:</strong> ${data.externalUserId}</div>`;
+  } catch (e) {
+    createStatus.textContent = "create: error ❌";
+    createOutput.textContent = String(e?.message || e);
+  }
+}
+
+createApplicantBtn.addEventListener("click", createApplicant);
       requestContext();
       checkBackend();
       loadVerificationLevels();
