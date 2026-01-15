@@ -59,6 +59,16 @@
       </div>
 
       <div id="createOutput" style="margin-top: 8px; font-size: 12px;"></div>
+      <hr style="margin: 12px 0; border: none; border-top: 1px solid #ddd;" />
+
+      <div style="font-weight: 600; margin-bottom: 6px;">Verification link</div>
+
+      <div class="row" style="margin-top: 8px;">
+       <button id="genLinkBtn">Generate link</button>
+       <span class="pill" id="linkStatus">link: (idle)</span>
+      </div>
+
+      <div id="linkBox" style="margin-top: 8px;"></div>
     </div>
 
     <!-- Result / brand + external id status -->
@@ -105,6 +115,9 @@
       const createApplicantBtn = document.getElementById("createApplicantBtn");
       const createStatus = document.getElementById("createStatus");
       const createOutput = document.getElementById("createOutput");
+      const genLinkBtn = document.getElementById("genLinkBtn");
+      const linkStatus = document.getElementById("linkStatus");
+      const linkBox = document.getElementById("linkBox");
 
       function requestContext() {
         window.parent.postMessage("chatwoot-dashboard-app:fetch-info", "*");
@@ -257,6 +270,7 @@
 
         const convo = parsed?.data?.conversation || parsed?.conversation || null;
         const contact = parsed?.data?.contact || parsed?.contact || convo?.meta?.sender || null;
+        window.__cw_email = contact?.email || "";
 
         const inboxId = convo?.inbox_id ?? parsed?.data?.conversation?.inbox_id ?? null;
         const brandInfo = findBrandByInbox(inboxId);
@@ -329,8 +343,80 @@
         }
       }
 
+      async function generateWebsdkLink() {
+  try {
+    linkStatus.textContent = "link: working…";
+    linkBox.innerHTML = "";
+
+    const levelName = levelSelect.value;
+    if (!currentExternalUserId || !currentBrand || !currentInboxId) {
+      linkStatus.textContent = "link: missing external ID ❌";
+      linkBox.textContent = "External ID is missing for this brand/inbox. Update the correct backoffice id attribute in Chatwoot.";
+      return;
+    }
+    if (!levelName) {
+      linkStatus.textContent = "link: select level ❌";
+      linkBox.textContent = "Please select a verification level first.";
+      return;
+    }
+
+    // Optional: include email if available in context (we'll keep a variable)
+    const payload = {
+      externalUserId: currentExternalUserId,
+      levelName,
+      email: (window.__cw_email || "")
+    };
+
+    const res = await fetch(`${BACKEND_BASE_URL}/api/kyc/generate-websdk-link`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await res.json();
+    if (!data.ok) {
+      linkStatus.textContent = "link: failed ❌";
+      linkBox.textContent = data.error || "Unknown error";
+      return;
+    }
+
+    const url = data.url;
+    linkStatus.textContent = "link: ready ✅";
+
+    linkBox.innerHTML = `
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+        <input id="websdkUrl" value="${url}" readonly
+          style="flex: 1; min-width: 260px; padding: 8px; border-radius: 8px; border: 1px solid #ccc; background: #fff;" />
+        <button id="copyLinkBtn">Copy</button>
+        <a href="${url}" target="_blank" rel="noreferrer" style="font-size: 12px;">Open</a>
+      </div>
+      <div style="font-size:12px; opacity:0.8; margin-top:6px;">
+        This link is temporary and is not stored by the app.
+      </div>
+    `;
+
+    document.getElementById("copyLinkBtn").addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(url);
+        linkStatus.textContent = "link: copied ✅";
+      } catch (e) {
+        // fallback if clipboard is blocked
+        const input = document.getElementById("websdkUrl");
+        input.focus();
+        input.select();
+        linkStatus.textContent = "link: select & copy manually";
+      }
+    });
+
+  } catch (e) {
+    linkStatus.textContent = "link: error ❌";
+    linkBox.textContent = String(e?.message || e);
+  }
+}
+
       document.getElementById("request").addEventListener("click", requestContext);
       createApplicantBtn.addEventListener("click", createApplicant);
+      genLinkBtn.addEventListener("click", generateWebsdkLink);
 
       // Auto-run on load
       requestContext();
