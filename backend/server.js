@@ -96,6 +96,69 @@ const levelNames = items
   }
 });
 
+app.post("/api/kyc/create-applicant", async (req, res) => {
+  try {
+    const { externalUserId, brand, inboxId, levelName, firstName, lastName, middleName } = req.body || {};
+
+    if (!externalUserId || !brand || !inboxId || !levelName) {
+      return res.status(400).json({ ok: false, error: "Missing required fields: externalUserId, brand, inboxId, levelName" });
+    }
+    if (!firstName || !lastName) {
+      return res.status(400).json({ ok: false, error: "Missing required fields: firstName and lastName" });
+    }
+
+    // 1) If we already have an applicant in our DB for this externalUserId, return it (avoid duplicates)
+    const existing = await getApplicantFromDb(externalUserId);
+    if (existing?.applicant_id) {
+      return res.json({
+        ok: true,
+        reused: true,
+        externalUserId,
+        applicantId: existing.applicant_id,
+        db: existing,
+      });
+    }
+
+    // 2) Create applicant in Sumsub
+    const body = {
+      externalUserId,
+      levelName,
+      fixedInfo: {
+        firstName,
+        lastName,
+      },
+    };
+
+    if (middleName && String(middleName).trim()) {
+      body.fixedInfo.middleName = String(middleName).trim();
+    }
+
+    const created = await sumsubFetch({
+      method: "POST",
+      pathWithQuery: "/resources/applicants?levelName=" + encodeURIComponent(levelName),
+      bodyObj: body,
+    });
+
+    // Sumsub returns applicant data; applicantId is typically in `id`
+    const applicantId = created?.id || created?.applicantId;
+    if (!applicantId) {
+      return res.status(500).json({ ok: false, error: "Created applicant but could not find applicantId in Sumsub response." });
+    }
+
+    // 3) Store mapping in DB
+    const dbRow = await upsertApplicantInDb({
+      externalUserId,
+      brand,
+      inboxId: Number(inboxId),
+      applicantId,
+    });
+
+    res.json({ ok: true, reused: false, externalUserId, applicantId, db: dbRow, raw: created });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
 // ---- DB setup ----
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -127,6 +190,31 @@ ensureTables().catch((err) => {
 app.get("/", (req, res) => res.send("Backend is running"));
 app.get("/health", (req, res) => res.status(200).send("Backend healthy"));
 app.get("/api/ping", (req, res) => res.json({ ok: true, message: "pong" }));
+
+async function getApplicantFromDb(externalUserId) {
+  const q = `SELECT external_user_id, brand, inbox_id, applicant_id, created_at, updated_at
+             FROM kyc_applicants
+             WHERE external_user_id = $1
+             LIMIT 1`;
+  const r = await pool.query(q, [externalUserId]);
+  return r.rows[0] || null;
+}
+
+async function upsertApplicantInDb({ externalUserId, brand, inboxId, applicantId }) {
+  const q = `
+    INSERT INTO kyc_applicants (external_user_id, brand, inbox_id, applicant_id, created_at, updated_at)
+    VALUES ($1, $2, $3, $4, NOW(), NOW())
+    ON CONFLICT (external_user_id)
+    DO UPDATE SET
+      brand = EXCLUDED.brand,
+      inbox_id = EXCLUDED.inbox_id,
+      applicant_id = EXCLUDED.applicant_id,
+      updated_at = NOW()
+    RETURNING external_user_id, brand, inbox_id, applicant_id, created_at, updated_at;
+  `;
+  const r = await pool.query(q, [externalUserId, brand, inboxId, applicantId]);
+  return r.rows[0];
+}
 
 // NEW: DB check endpoint
 app.get("/api/db-check", async (req, res) => {
