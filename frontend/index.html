@@ -81,6 +81,8 @@
       ];
 
       const BACKEND_BASE_URL = "https://sumsub-chatwoot-app.onrender.com";
+      const levelSelect = document.getElementById("levelSelect");
+      const levelHint = document.getElementById("levelHint");
 
       function requestContext() {
         window.parent.postMessage("chatwoot-dashboard-app:fetch-info", "*");
@@ -111,6 +113,40 @@
           backendPill.textContent = "backend: not reachable ❌";
         }
       }
+
+      async function loadVerificationLevels() {
+  try {
+    levelSelect.innerHTML = `<option value="">Loading levels…</option>`;
+    levelHint.textContent = "";
+
+    const res = await fetch(`${BACKEND_BASE_URL}/api/sumsub/levels`);
+    const data = await res.json();
+
+    if (!data.ok) {
+      levelSelect.innerHTML = `<option value="">Failed to load levels</option>`;
+      levelHint.textContent = data.error || "Unknown error";
+      return;
+    }
+
+    const levels = Array.isArray(data.levelNames) ? data.levelNames : [];
+
+    if (levels.length === 0) {
+      levelSelect.innerHTML = `<option value="">No levels returned</option>`;
+      levelHint.textContent = "Sumsub returned an empty list.";
+      return;
+    }
+
+    // Populate dropdown
+    levelSelect.innerHTML = `<option value="">Select a level…</option>` + levels
+      .map((lvl) => `<option value="${lvl}">${lvl}</option>`)
+      .join("");
+
+    levelHint.textContent = "Levels loaded from Sumsub (dynamic).";
+  } catch (e) {
+    levelSelect.innerHTML = `<option value="">Failed to load levels</option>`;
+    levelHint.textContent = String(e?.message || e);
+  }
+}
 
       function renderStatus({ inboxId, brandInfo, backofficeValue }) {
         inboxPill.textContent = `inbox: ${inboxId ?? "(missing)"}`;
@@ -190,6 +226,7 @@
       // Auto-request once on load
       requestContext();
       checkBackend();
+      loadVerificationLevels();
     </script>
   </body>
 </html>
