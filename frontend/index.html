@@ -68,6 +68,17 @@
        <span class="pill" id="linkStatus">link: (idle)</span>
       </div>
 
+      <hr style="margin: 12px 0; border: none; border-top: 1px solid #ddd;" />
+
+      <div style="font-weight: 600; margin-bottom: 6px;">KYC status</div>
+
+      <div class="row" style="margin-top: 8px;">
+        <button id="statusBtn">Check KYC status</button>
+        <span class="pill" id="statusPill">status: (idle)</span>
+      </div>
+
+      <div id="statusBox" style="margin-top: 8px;"></div>
+
       <div id="linkBox" style="margin-top: 8px;"></div>
     </div>
 
@@ -118,6 +129,9 @@
       const genLinkBtn = document.getElementById("genLinkBtn");
       const linkStatus = document.getElementById("linkStatus");
       const linkBox = document.getElementById("linkBox");
+      const statusBtn = document.getElementById("statusBtn");
+      const statusPill = document.getElementById("statusPill");
+      const statusBox = document.getElementById("statusBox");
 
       function requestContext() {
         window.parent.postMessage("chatwoot-dashboard-app:fetch-info", "*");
@@ -414,9 +428,70 @@
   }
 }
 
+      async function checkKycStatus() {
+  try {
+    statusPill.textContent = "status: working…";
+    statusBox.innerHTML = "";
+
+    if (!currentExternalUserId) {
+      statusPill.textContent = "status: missing external ID ❌";
+      statusBox.textContent = "External ID is missing for this brand/inbox. Update the correct backoffice id attribute in Chatwoot.";
+      return;
+    }
+
+    const res = await fetch(`${BACKEND_BASE_URL}/api/kyc/status`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ externalUserId: currentExternalUserId }),
+    });
+
+    const data = await res.json();
+
+    if (!data.ok) {
+      statusPill.textContent = "status: failed ❌";
+      statusBox.textContent = data.error || "Unknown error";
+      return;
+    }
+
+    const s = data.summary || {};
+    const lines = [];
+
+    lines.push(`<div><strong>Applicant ID:</strong> ${s.applicantId || "-"}</div>`);
+    lines.push(`<div><strong>Review status:</strong> ${s.reviewStatus || "-"}</div>`);
+    lines.push(`<div><strong>Review answer:</strong> ${s.reviewAnswer || "-"}</div>`);
+
+    if (s.rejectType) lines.push(`<div><strong>Reject type:</strong> ${s.rejectType}</div>`);
+    if (Array.isArray(s.rejectLabels) && s.rejectLabels.length) {
+      lines.push(`<div><strong>Reject labels:</strong> ${s.rejectLabels.join(", ")}</div>`);
+    }
+    if (s.moderationComment) lines.push(`<div><strong>Moderation comment:</strong> ${s.moderationComment}</div>`);
+    if (s.clientComment) lines.push(`<div><strong>Client comment:</strong> ${s.clientComment}</div>`);
+
+    // Decide pill status
+    const pill = (s.reviewAnswer === "GREEN") ? "status: approved ✅"
+               : (s.reviewAnswer === "RED") ? "status: rejected ❌"
+               : "status: pending ⏳";
+    statusPill.textContent = pill;
+
+    statusBox.innerHTML = `
+      <div class="card" style="background:#fff; border:1px solid #ddd;">
+        ${lines.join("")}
+        <details style="margin-top:10px;">
+          <summary>View details (raw)</summary>
+          <pre style="margin-top:8px;">${JSON.stringify(data.raw, null, 2)}</pre>
+        </details>
+      </div>
+    `;
+  } catch (e) {
+    statusPill.textContent = "status: error ❌";
+    statusBox.textContent = String(e?.message || e);
+  }
+}
+
       document.getElementById("request").addEventListener("click", requestContext);
       createApplicantBtn.addEventListener("click", createApplicant);
       genLinkBtn.addEventListener("click", generateWebsdkLink);
+      statusBtn.addEventListener("click", checkKycStatus);
 
       // Auto-run on load
       requestContext();
