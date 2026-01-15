@@ -314,6 +314,55 @@ app.post("/api/kyc/generate-websdk-link", async (req, res) => {
   }
 });
 
+// NEW: Check KYC status for the brand-specific externalUserId
+app.post("/api/kyc/status", async (req, res) => {
+  try {
+    const { externalUserId } = req.body || {};
+    if (!externalUserId) {
+      return res.status(400).json({ ok: false, error: "Missing required field: externalUserId" });
+    }
+
+    // Ensure applicant exists in DB
+    const existing = await getApplicantFromDb(externalUserId);
+    if (!existing?.applicant_id) {
+      return res.status(400).json({
+        ok: false,
+        error: "No applicant found in DB for this externalUserId. Create applicant first.",
+      });
+    }
+
+    const applicantId = existing.applicant_id;
+
+    // Sumsub: get applicant data including review information
+    // Endpoint: GET /resources/applicants/{applicantId}/one
+    const data = await sumsubFetch({
+      method: "GET",
+      pathWithQuery: `/resources/applicants/${encodeURIComponent(applicantId)}/one`,
+    });
+
+    // Common fields we care about:
+    // - review.reviewStatus (pending/completed)
+    // - review.reviewResult.reviewAnswer (GREEN/RED) and rejectType/rejectLabels
+    // - review.reviewResult.moderationComment
+    const review = data?.review || null;
+
+    const summary = {
+      applicantId,
+      externalUserId,
+      reviewStatus: review?.reviewStatus || null,
+      reviewAnswer: review?.reviewResult?.reviewAnswer || null,
+      rejectType: review?.reviewResult?.rejectType || null,
+      rejectLabels: review?.reviewResult?.rejectLabels || null,
+      moderationComment: review?.reviewResult?.moderationComment || null,
+      clientComment: review?.reviewResult?.clientComment || null,
+    };
+
+    return res.json({ ok: true, summary, raw: data });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
 // ---------- Start server ----------
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on port ${PORT}`);
