@@ -29,9 +29,17 @@
         <span class="pill" id="attrPill">attr: (waiting)</span>
         <span class="pill" id="backendPill">backend: (not checked)</span>
       </div>
-      <div style="margin-top: 10px;" id="resultBox">
-        Waiting for context…
-      </div>
+      <div style="margin-top: 10px;" class="card">
+  <div style="font-weight: 600; margin-bottom: 6px;">Verification level</div>
+  <select id="levelSelect" style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid #ccc;">
+    <option value="">Loading levels…</option>
+  </select>
+  <div id="levelHint" style="font-size: 12px; opacity: 0.8; margin-top: 6px;"></div>
+</div>
+
+<div style="margin-top: 10px;" id="resultBox">
+  Waiting for context…
+</div>
     </div>
 
     <details>
